@@ -1,0 +1,4 @@
+external_id,date,description,amount,category,kind
+example-001,2026-09-01,Salary,3200.00,Income,income
+example-002,2026-09-02,Groceries,-42.50,Groceries,expense
+example-003,2026-09-03,Transfer to bills account,-1000.00,Transfers,transfer

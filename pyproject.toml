@@ -1,0 +1,9 @@
+[project]
+name = "smartmoney-local"
+version = "0.1.0"
+description = "Local personal finance dashboard with advisory cash planning"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+cache_dir = ".pytest_cache"

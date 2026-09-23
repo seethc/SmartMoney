@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#234e42"><meta name="description" content="Your personal, local finance dashboard. A clearer view of your money.">
+  <title>SmartMoney · Your money, in view</title>
+  <link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png"><link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="#overview"><span class="brand-icon">s<span>m</span></span>smartmoney<span class="brand-dot">.</span></a>
+  <div class="workspace-caption">PERSONAL WORKSPACE</div>
+  <nav aria-label="Main navigation">
+    <button data-view="overview" class="active"><span>◫</span>Overview</button>
+    <button data-view="accounts"><span>▤</span>Accounts</button>
+    <button data-view="spending"><span>◷</span>Spending</button>
+    <button data-view="cashflow"><span>↗</span>Cash flow</button>
+    <button data-view="plan"><span>⇄</span>Transfer plan <b id="plan-count">0</b></button>
+    <button data-view="transactions"><span>≡</span>Transactions</button>
+    <button data-action="bank-setup"><span>⌁</span>Bank connections</button>
+    <button data-view="data" class="mobile-data"><span>⚙</span>Settings</button>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="local-card"><span class="live-dot"></span><strong>Stored locally</strong><p>Bank feeds use Enable Banking.<br>You're always in control.</p></div>
+    <button data-view="data" class="data-link"><span>⚙</span>Data & settings</button>
+    <div class="profile"><span class="avatar">ME</span><div><strong>My finances</strong><small>Personal workspace</small></div><span>⌄</span></div>
+  </div>
+</aside>
+<div class="app-shell">
+  <header class="topbar"><span class="breadcrumb">My workspace <span>/</span> <strong id="breadcrumb">Overview</strong></span><div class="top-controls"><span class="badge read-only">◉ Banking is read-only</span><button id="install" class="quiet">Install app ↗</button><select id="dataset" aria-label="Workspace"><option value="demo">Demo workspace</option><option value="personal">My real data</option></select></div></header>
+  <main id="main" tabindex="-1"><div class="loading">Opening your financial overview…</div></main>
+  <footer><span>smartmoney <span class="muted">/ A little more clarity.</span></span><span>Stored locally · GBP · No payment access</span></footer>
+</div>
+<dialog id="dialog"><div id="dialog-content"></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

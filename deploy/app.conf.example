@@ -1,0 +1,5 @@
+# Default: loopback only; connect from your computer with an SSH tunnel.
+SMARTMONEY_PUBLIC_URL=http://127.0.0.1:8765
+# Optional private phone access, after configuring Tailscale Serve:
+# SMARTMONEY_PUBLIC_URL=https://YOUR-PI.YOUR-TAILNET.ts.net
+# Keep the key/password paths in the systemd service. No secrets go in this file.

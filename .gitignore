@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+.pytest_cache/
+data/
+*.log
+*.key
+*.password
+.env
+dist/
+
+.reference/
+.codex-remote-attachments/
+.codex/
+*.pem
+*.crt
+*.sqlite3*
+

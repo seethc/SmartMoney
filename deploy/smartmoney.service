@@ -1,0 +1,36 @@
+[Unit]
+Description=SmartMoney private finance dashboard
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=smartmoney
+Group=smartmoney
+WorkingDirectory=/opt/smartmoney
+ExecStart=/opt/smartmoney/.venv/bin/python /opt/smartmoney/run.py
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=SMARTMONEY_DATA_DIR=/var/lib/smartmoney
+Environment=SMARTMONEY_VAULT_KEY_FILE=%d/vault.key
+Environment=SMARTMONEY_ACCESS_PASSWORD_FILE=%d/access.password
+EnvironmentFile=-/etc/smartmoney/app.conf
+LoadCredential=vault.key:/etc/smartmoney/vault.key
+LoadCredential=access.password:/etc/smartmoney/access.password
+StateDirectory=smartmoney
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

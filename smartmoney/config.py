@@ -15,10 +15,6 @@ class Settings:
     password: bytes | None = field(default=None, repr=False)
 
     @property
-    def callback_url(self):
-        return self.public_url + '/openbanking-callback'
-
-    @property
     def remote(self):
         return self.public_url != LOCAL_ORIGIN
 

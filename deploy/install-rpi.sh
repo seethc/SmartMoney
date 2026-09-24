@@ -10,6 +10,7 @@ case "$(uname -m)" in
     aarch64|arm64) ;;
     *) echo 'This installer targets 64-bit Raspberry Pi OS (aarch64).' >&2; exit 1 ;;
 esac
+command -v tesseract >/dev/null || { echo 'Install tesseract-ocr and tesseract-ocr-eng with apt first.' >&2; exit 1; }
 python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ is required"'
 source_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 if [ "$source_dir" = /opt/smartmoney ]; then
@@ -29,6 +30,11 @@ if systemctl is-active --quiet smartmoney.service; then
     systemctl stop smartmoney.service
 fi
 install -d -m 0755 /opt/smartmoney
+# Remove only the explicitly retired code files on upgrade. Financial records
+# and old credential files are preserved, but the new service never loads them.
+for retired in smartmoney/bankfeed.py smartmoney/openbanking.py smartmoney/providers.py smartmoney/vault.py frontend/connections.html frontend/connections.js frontend/bank-callback.html frontend/bank-callback.js tests/test_openbanking.py; do
+    rm -f -- "/opt/smartmoney/$retired"
+done
 for directory in smartmoney frontend deploy docs tests; do
     install -d -m 0755 "/opt/smartmoney/$directory"
     cp -R "$source_dir/$directory/." "/opt/smartmoney/$directory/"
@@ -49,7 +55,6 @@ install -d -m 0700 /etc/smartmoney
 install -d -m 0700 -o smartmoney -g smartmoney /var/lib/smartmoney
 cd /opt/smartmoney
 SMARTMONEY_DATA_DIR=/var/lib/smartmoney \
-SMARTMONEY_VAULT_KEY_FILE=/etc/smartmoney/vault.key \
 SMARTMONEY_ACCESS_PASSWORD_FILE=/etc/smartmoney/access.password \
     .venv/bin/python -m smartmoney.init_secrets
 if [ ! -e /etc/smartmoney/app.conf ]; then
@@ -59,4 +64,4 @@ install -m 0644 deploy/smartmoney.service /etc/systemd/system/smartmoney.service
 systemctl daemon-reload
 systemctl enable --now smartmoney.service
 systemctl --no-pager --full status smartmoney.service
-echo 'Installed. See docs/raspberry-pi.md for the SSH tunnel and private phone access.'
+echo 'Installed. See docs/raspberry-pi.md for the private access from your laptop and phone.'

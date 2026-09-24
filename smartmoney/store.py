@@ -44,11 +44,12 @@ def initialize():
                 name TEXT NOT NULL, amount_pence INTEGER NOT NULL, next_due TEXT NOT NULL,
                 frequency TEXT NOT NULL, month_day INTEGER NOT NULL, kind TEXT NOT NULL,
                 target_account_id INTEGER REFERENCES accounts(id));
-            CREATE TABLE IF NOT EXISTS bank_links (
-                account_id INTEGER PRIMARY KEY REFERENCES accounts(id),
-                identity_hash TEXT NOT NULL UNIQUE, bank TEXT NOT NULL,
-                planning_balance_pence INTEGER, balance_type TEXT NOT NULL,
-                last_sync TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS snapshot_audit (
+                id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id),
+                previous_balance_pence INTEGER, previous_as_of TEXT,
+                balance_pence INTEGER NOT NULL, balance_as_of TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'reviewed_screenshot',
+                saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
             ''')
             columns = {r['name'] for r in db.execute('PRAGMA table_info(transactions)')}
             if 'needs_review' not in columns:

@@ -3,12 +3,10 @@ import os
 import secrets
 from pathlib import Path
 
-from . import vault
 from .private_files import create_private, read_private
 
 
 def main():
-    vault.initialize_key()
     target = os.environ.get('SMARTMONEY_ACCESS_PASSWORD_FILE')
     if target:
         path = Path(target).expanduser()

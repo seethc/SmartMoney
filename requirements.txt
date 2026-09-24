@@ -2,5 +2,4 @@ fastapi>=0.115,<1
 uvicorn>=0.30,<1
 httpx>=0.27,<1
 pytest>=8,<10
-cryptography>=46,<51
-PyJWT>=2.10,<3
+Pillow>=11,<13

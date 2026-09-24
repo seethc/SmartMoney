@@ -15,11 +15,12 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from . import store, config
 from .engine import forecast
-from .openbanking import router as banking_router
+from . import screenshots
 
 ROOT = Path(__file__).resolve().parent.parent
 Dataset = Literal['demo', 'personal']
@@ -66,10 +67,15 @@ async def local_boundary(request: Request, call_next):
             length = int(request.headers.get('content-length', '0'))
         except ValueError:
             return JSONResponse({'detail': 'Invalid content length.'}, status_code=400)
-        if length > 2_000_000:
-            return JSONResponse({'detail': 'Import is limited to 2 MB.'}, status_code=413)
-        if len(await request.body()) > 2_000_000:
-            return JSONResponse({'detail': 'Import is limited to 2 MB.'}, status_code=413)
+        limit = screenshots.MAX_BYTES if request.url.path == '/api/screenshots/preview' else 2_000_000
+        if length > limit:
+            return JSONResponse({'detail': f'Upload is limited to {limit // 1_000_000} MB.'}, status_code=413)
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > limit:
+                return JSONResponse({'detail': f'Upload is limited to {limit // 1_000_000} MB.'}, status_code=413)
+            body.extend(chunk)
+        request._body = bytes(body)
     response = await call_next(request)
     response.headers['Cache-Control'] = 'no-store' if request.url.path.startswith('/api') else 'no-cache'
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -80,7 +86,7 @@ async def local_boundary(request: Request, call_next):
 
 @app.get('/api/runtime')
 def runtime():
-    return {'public_url':config.settings.public_url, 'callback_url':config.settings.callback_url,
+    return {'public_url':config.settings.public_url,
             'remote':config.settings.remote}
 
 
@@ -143,14 +149,6 @@ def dashboard(dataset: Dataset = 'demo', month: str | None = None, days: int = 3
         raise HTTPException(422, 'Use YYYY-MM for the month.')
     with store.connection(dataset) as db:
         accounts, transactions, schedules = (store.records(db,t) for t in ('accounts','transactions','schedules'))
-        links = {r['account_id']:dict(r) for r in db.execute('SELECT * FROM bank_links')}
-        for account in accounts:
-            link = links.get(account['id'])
-            if link:
-                account['bank_feed'] = True
-                account['last_sync'] = link['last_sync']
-                if link['planning_balance_pence'] is not None:
-                    account['forecast_balance_pence'] = link['planning_balance_pence']
     selected = [t for t in transactions if t['date'].startswith(month)]
     categories = defaultdict(int)
     for t in selected:
@@ -200,10 +198,8 @@ def add_account(item: Account, dataset: Dataset = 'personal'):
 def update_account(key: int, item: Account, dataset: Dataset = 'personal'):
     values = account_values(item)
     with store.connection(dataset) as db:
-        previous = existing(db,'accounts',key)
+        existing(db,'accounts',key)
         db.execute('UPDATE accounts SET name=?,institution=?,kind=?,role=?,balance_pence=?,buffer_pence=?,daily_allowance_pence=?,balance_as_of=?,can_fund=? WHERE id=?',(*values,key))
-        if previous['balance_pence'] != values[4] or previous['balance_as_of'] != values[7]:
-            db.execute('UPDATE bank_links SET planning_balance_pence=NULL WHERE account_id=?',(key,))
     return {'saved':True}
 
 
@@ -235,8 +231,6 @@ def remove_schedule(key: int, dataset: Dataset = 'personal'):
 
 def parse_import(db, item):
     existing(db,'accounts',item.account_id)
-    if db.execute('SELECT 1 FROM bank_links WHERE account_id=?',(item.account_id,)).fetchone():
-        raise HTTPException(422, 'This account uses a bank feed. CSV import is disabled to prevent duplicate history.')
     reader = csv.DictReader(io.StringIO(item.csv_text.lstrip('\ufeff')))
     required = {'external_id','date','description','amount','category','kind'}
     if not reader.fieldnames or set(reader.fieldnames) != required:
@@ -305,5 +299,79 @@ def index():
     return FileResponse(ROOT / 'frontend' / 'index.html')
 
 
-app.include_router(banking_router)
+@app.get('/api/screenshots/status')
+def screenshot_status():
+    return {'ocr_available': bool(screenshots.executable()), 'max_bytes': screenshots.MAX_BYTES}
+
+
+@app.post('/api/screenshots/preview')
+async def screenshot_preview(request: Request):
+    raw = await request.body()
+    try:
+        lines = await run_in_threadpool(screenshots.read_lines, raw)
+        return screenshots.interpret(lines)
+    except screenshots.ScreenshotError as exc:
+        raise HTTPException(exc.status, str(exc)) from None
+
+
+class SnapshotRow(BaseModel):
+    account_id: int | None = None
+    name: str = Field(default='', max_length=80)
+    institution: str = Field(default='', max_length=80)
+    kind: Literal['current', 'savings', 'credit', 'investment'] = 'current'
+    balance: str = Field(max_length=30)
+    balance_as_of: date
+    expected_balance_pence: int | None = None
+    expected_balance_as_of: date | None = None
+
+
+class SnapshotImport(BaseModel):
+    confirmed: Literal[True]
+    rows: list[SnapshotRow] = Field(min_length=1, max_length=60)
+
+
+@app.post('/api/screenshots/commit')
+def commit_snapshots(item: SnapshotImport, dataset: Dataset = 'personal'):
+    updated, created, unchanged, seen = 0, 0, 0, set()
+    with store.connection(dataset) as db:
+        db.execute('BEGIN IMMEDIATE')
+        for row in item.rows:
+            balance = pence(row.balance)
+            if row.balance_as_of > date.today():
+                raise HTTPException(422, 'Balance dates cannot be in the future.')
+            previous = None
+            if row.account_id is not None:
+                if row.account_id in seen:
+                    raise HTTPException(422, 'Each account can be updated only once per import. Remove overlapping screenshot rows.')
+                previous = existing(db, 'accounts', row.account_id)
+                seen.add(row.account_id)
+                if (row.expected_balance_pence != previous['balance_pence'] or
+                        row.expected_balance_as_of is None or row.expected_balance_as_of.isoformat() != previous['balance_as_of']):
+                    raise HTTPException(409, 'An account changed since this page loaded. Reload the page and review the screenshot again.')
+                if row.balance_as_of.isoformat() < previous['balance_as_of']:
+                    raise HTTPException(409, 'An older screenshot cannot replace a newer account snapshot.')
+                if previous['kind'] == 'credit' and balance > 0:
+                    raise HTTPException(422, 'Enter credit-card debt as a negative balance.')
+                if previous['balance_pence'] == balance and previous['balance_as_of'] == row.balance_as_of.isoformat():
+                    unchanged += 1
+                    continue
+                db.execute('UPDATE accounts SET balance_pence=?,balance_as_of=? WHERE id=?',
+                           (balance, row.balance_as_of.isoformat(), row.account_id))
+                key = row.account_id
+                updated += 1
+            else:
+                if not row.name.strip() or not row.institution.strip():
+                    raise HTTPException(422, 'New accounts need an account name and institution.')
+                values = account_values(Account(name=row.name, institution=row.institution, kind=row.kind,
+                                                 balance=row.balance, balance_as_of=row.balance_as_of))
+                if db.execute('SELECT 1 FROM accounts WHERE lower(name)=lower(?) AND lower(institution)=lower(?)', values[:2]).fetchone():
+                    raise HTTPException(409, 'That account already exists. Select the existing account instead of creating another.')
+                key = db.execute('INSERT INTO accounts VALUES(NULL,?,?,?,?,?,?,?,?,?)', values).lastrowid
+                created += 1
+            db.execute('INSERT INTO snapshot_audit(account_id,previous_balance_pence,previous_as_of,balance_pence,balance_as_of) VALUES(?,?,?,?,?)',
+                       (key, previous['balance_pence'] if previous else None, previous['balance_as_of'] if previous else None,
+                        balance, row.balance_as_of.isoformat()))
+    return {'updated': updated, 'created': created, 'unchanged': unchanged}
+
+
 app.mount('/',StaticFiles(directory=ROOT / 'frontend'),name='frontend')

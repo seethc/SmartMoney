@@ -50,6 +50,10 @@ def initialize():
                 balance_pence INTEGER NOT NULL, balance_as_of TEXT NOT NULL,
                 source TEXT NOT NULL DEFAULT 'reviewed_screenshot',
                 saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS spending_summaries (
+                month TEXT PRIMARY KEY, start_date TEXT NOT NULL, end_date TEXT NOT NULL,
+                scope TEXT NOT NULL, total_pence INTEGER NOT NULL, rows_json TEXT NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 1);
             ''')
             columns = {r['name'] for r in db.execute('PRAGMA table_info(transactions)')}
             if 'needs_review' not in columns:

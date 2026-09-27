@@ -4,6 +4,7 @@ import re
 import base64
 import binascii
 import hmac
+import json
 from urllib.parse import urlsplit
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from . import store, config
-from .engine import forecast
+from .engine import forecast, occurrences
 from . import screenshots
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -125,7 +126,7 @@ class Schedule(BaseModel):
     name: str = Field(min_length=1,max_length=100)
     amount: str
     next_due: date
-    frequency: Literal['once','monthly'] = 'monthly'
+    frequency: Literal['once','weekly','fortnightly','monthly','quarterly','yearly'] = 'monthly'
     kind: Literal['expense','income','transfer'] = 'expense'
     target_account_id: int | None = None
 
@@ -149,6 +150,8 @@ def dashboard(dataset: Dataset = 'demo', month: str | None = None, days: int = 3
         raise HTTPException(422, 'Use YYYY-MM for the month.')
     with store.connection(dataset) as db:
         accounts, transactions, schedules = (store.records(db,t) for t in ('accounts','transactions','schedules'))
+        summary = read_summary(db, month)
+        summary_months = {r['month'] for r in db.execute('SELECT month FROM spending_summaries')}
     selected = [t for t in transactions if t['date'].startswith(month)]
     categories = defaultdict(int)
     for t in selected:
@@ -156,14 +159,14 @@ def dashboard(dataset: Dataset = 'demo', month: str | None = None, days: int = 3
             categories[t['category']] -= t['amount_pence']
     income = sum(t['amount_pence'] for t in selected if t['kind'] == 'income' and not t['needs_review'])
     spending = sum(categories.values())
-    months = sorted({t['date'][:7] for t in transactions} | {month}, reverse=True)
+    months = sorted({t['date'][:7] for t in transactions} | summary_months | {month}, reverse=True)
     history = []
     for m in sorted(months) [-6:]:
         rows = [t for t in transactions if t['date'].startswith(m) and not t['needs_review']]
         history.append({'month': m, 'income': sum(t['amount_pence'] for t in rows if t['kind']=='income'),
                         'spending': -sum(t['amount_pence'] for t in rows if t['kind']=='expense')})
     return {'dataset':dataset, 'today':date.today().isoformat(), 'month':month, 'months':months,
-        'accounts':accounts, 'transactions':sorted(selected,key=lambda t:(t['date'],t['id']),reverse=True),
+        'accounts':accounts, 'snoop_summary':summary, 'transactions':sorted(selected,key=lambda t:(t['date'],t['id']),reverse=True),
         'unreviewed_count':sum(bool(t['needs_review']) for t in transactions),
         'unreviewed_months':sorted({t['date'][:7] for t in transactions if t['needs_review']},reverse=True),
         'schedules':schedules, 'categories':dict(sorted(categories.items(),key=lambda x:-x[1])),
@@ -205,19 +208,40 @@ def update_account(key: int, item: Account, dataset: Dataset = 'personal'):
 
 @app.post('/api/schedules')
 def add_schedule(item: Schedule, dataset: Dataset = 'personal'):
+    return save_schedule(item, dataset)
+
+
+@app.put('/api/schedules/{key}')
+def update_schedule(key: int, item: Schedule, dataset: Dataset = 'personal'):
+    return save_schedule(item, dataset, key)
+
+
+def save_schedule(item, dataset, key=None):
     amount = pence(item.amount)
     if amount == 0 or (item.kind in ('expense','transfer') and amount > 0) or (item.kind == 'income' and amount < 0):
         raise HTTPException(422,'Use a negative amount for bills/transfers and a positive amount for income.')
     if item.next_due < date.today():
         raise HTTPException(422,'Next due must be today or later.')
+    if not item.name.strip():
+        raise HTTPException(422, 'Enter a payment name.')
     if (item.kind == 'transfer') != bool(item.target_account_id) or item.target_account_id == item.account_id:
         raise HTTPException(422,'A transfer needs a different destination account; other entries must have none.')
     with store.connection(dataset) as db:
+        if key is not None:
+            previous = existing(db, 'schedules', key)
         existing(db,'accounts',item.account_id)
         if item.target_account_id:
             existing(db,'accounts',item.target_account_id)
-        cur = db.execute('INSERT INTO schedules VALUES(NULL,?,?,?,?,?,?,?,?)',
-            (item.account_id,item.name,amount,item.next_due.isoformat(),item.frequency,item.next_due.day,item.kind,item.target_account_id))
+        anchor = item.next_due.day
+        if key is not None and previous['frequency'] == item.frequency and item.frequency != 'once':
+            upcoming = next(occurrences(previous, date.today(), item.next_due), None)
+            if upcoming == item.next_due:
+                anchor = previous['month_day']
+        values = (item.account_id,item.name.strip(),amount,item.next_due.isoformat(),item.frequency,anchor,item.kind,item.target_account_id)
+        if key is not None:
+            db.execute('UPDATE schedules SET account_id=?,name=?,amount_pence=?,next_due=?,frequency=?,month_day=?,kind=?,target_account_id=? WHERE id=?', (*values, key))
+            return {'id': key}
+        cur = db.execute('INSERT INTO schedules VALUES(NULL,?,?,?,?,?,?,?,?)', values)
         return {'id':cur.lastrowid}
 
 
@@ -372,6 +396,69 @@ def commit_snapshots(item: SnapshotImport, dataset: Dataset = 'personal'):
                        (key, previous['balance_pence'] if previous else None, previous['balance_as_of'] if previous else None,
                         balance, row.balance_as_of.isoformat()))
     return {'updated': updated, 'created': created, 'unchanged': unchanged}
+
+
+class SpendingRow(BaseModel):
+    label: str = Field(min_length=1, max_length=60)
+    amount: str = Field(max_length=30)
+    kind: Literal['expense', 'income', 'transfer', 'excluded']
+    count: int | None = Field(default=None, ge=0, le=1000000)
+
+
+class SpendingImport(BaseModel):
+    confirmed: Literal[True]
+    start_date: date
+    end_date: date
+    scope: str = Field(min_length=1, max_length=200)
+    total: str = Field(max_length=30)
+    rows: list[SpendingRow] = Field(min_length=1, max_length=60)
+    expected_revision: int = Field(default=0, ge=0)
+    replace_existing: bool = False
+
+
+def read_summary(db, month):
+    row = db.execute('SELECT * FROM spending_summaries WHERE month=?', (month,)).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    result['rows'] = json.loads(result.pop('rows_json'))
+    return result
+
+
+@app.get('/api/spending-summaries/{month}')
+def get_summary(month: str, dataset: Dataset = 'personal'):
+    with store.connection(dataset) as db:
+        return {'summary': read_summary(db, month)}
+
+
+@app.post('/api/spending-summaries')
+def save_summary(item: SpendingImport, dataset: Dataset = 'personal'):
+    month = item.start_date.strftime('%Y-%m')
+    if item.start_date > item.end_date or item.end_date > date.today() or item.end_date.strftime('%Y-%m') != month:
+        raise HTTPException(422, 'Choose the actual date range within one month, ending today or earlier.')
+    if not item.scope.strip():
+        raise HTTPException(422, 'Enter which accounts this report covers.')
+    rows, seen = [], set()
+    for row in item.rows:
+        name = row.label.strip()
+        if not name or name.casefold() in seen:
+            raise HTTPException(422, 'Each category must have a unique, nonempty name.')
+        seen.add(name.casefold())
+        rows.append({'label': name, 'amount_pence': pence(row.amount), 'kind': row.kind, 'count': row.count})
+    total = pence(item.total)
+    if not any(r['kind'] == 'expense' for r in rows) or sum(r['amount_pence'] for r in rows if r['kind'] == 'expense') != total:
+        raise HTTPException(422, 'Category spending must match the screenshot total. Check missing rows, amounts and refunds.')
+    with store.connection(dataset) as db:
+        db.execute('BEGIN IMMEDIATE')
+        previous = read_summary(db, month)
+        revision = previous['revision'] if previous else 0
+        if revision != item.expected_revision:
+            raise HTTPException(409, 'This month changed. Reselect the date range to reload the saved report before replacing it.')
+        if previous and not item.replace_existing:
+            raise HTTPException(409, 'Confirm replacement of the saved report for this month.')
+        db.execute('INSERT INTO spending_summaries VALUES(?,?,?,?,?,?,?) ON CONFLICT(month) DO UPDATE SET start_date=excluded.start_date,end_date=excluded.end_date,scope=excluded.scope,total_pence=excluded.total_pence,rows_json=excluded.rows_json,revision=excluded.revision',
+                   (month, item.start_date.isoformat(), item.end_date.isoformat(), item.scope.strip(), total, json.dumps(rows), revision + 1))
+    return {'saved': True, 'month': month}
 
 
 app.mount('/',StaticFiles(directory=ROOT / 'frontend'),name='frontend')

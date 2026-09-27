@@ -21,6 +21,14 @@ a balance, or writes anything during preview. Every candidate starts skipped.
 
 ## Offline design and Pi limits
 
+The spending-category layout is also supported. Coordinates align each category
+name with its main amount; transaction counts are below, alongside comparisons
+that must not be imported. A plus sign on a spending category means a net refund.
+The excluded section separates income and internal transfers from spending.
+Small shared images are enlarged before OCR within the same 1200 × 2400 bound.
+Unclear amounts stay blank for review. The year, actual coverage dates and account
+scope are entered by the user; they are not inferred from a comparison label.
+
 Pillow validates images; the Tesseract 5 executable uses the locally installed
 English language file. No LLM, cloud API, internet font, CDN, runtime package/model
 download, or external OCR endpoint is used. See the
@@ -44,7 +52,7 @@ nor guarantee that remote network services work without internet.
 
 ## What is saved
 
-Only user-confirmed GBP balance snapshots. Images and OCR text are not persisted.
+User-confirmed GBP balance snapshots and separate spending reports. Images and OCR text are not persisted.
 SQLite retains account names, balances and dates, and an audit of previous values.
 The UI clears its draft after success/discard. OS swap or diagnostic dumps are not
 controlled by this app. Credentials are not needed for Snoop screenshot import.
@@ -75,12 +83,22 @@ and March spending, and flagged the partially hidden card. The read took under
 one second on the Windows development machine; this is **not** a Pi timing result.
 That downloaded third-party image is not included in the repository or release.
 
-The Windows validation run passed 41 tests, including both real OCR fixtures.
+Validation includes real OCR on synthetic light/dark account cards and a small
+spending-category image, plus report reconciliation and replacement conflicts.
 Browser checks exercised upload, review, an existing-account update, a new credit
 account and the saved-result screen using a separate disposable database. A
 412-pixel mobile viewport showed no horizontal overflow. Pi deployment and a real
-user screenshot remain to be tested on the device.
+user screenshot remain to be tested on the device. The supplied category screenshot
+was successfully read on Windows, including every main amount, counts, the refund
+sign, and excluded income/transfers. That private image and its values are not
+included in the repository or package.
 
-This release imports balances only. CSV history remains available for transaction
-analysis. Automatic transaction OCR, account-logo recognition, access to Snoop's
+Spending summaries retain category counts, signed spending, excluded amounts,
+date range, scope and revision in `spending_summaries`. The headline total must
+match the expense rows exactly. A repeated report replaces a month only after
+confirmation; stale revisions fail. CSV totals and summaries remain separate.
+Forecasts never treat category summaries as transactions or account balances.
+
+CSV history remains available for transaction analysis. Automatic transaction OCR,
+account-logo recognition, access to Snoop's
 private API, and unattended phone control are outside this implementation.

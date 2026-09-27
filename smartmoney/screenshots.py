@@ -68,6 +68,11 @@ def _read_lines(raw):
                 # Resize before copying/converting; OCR never exceeds 2.88 MP.
                 source.thumbnail((1200, 2400))
                 gray = ImageOps.grayscale(ImageOps.exif_transpose(source))
+                # Enlarge small shared screenshots before OCR; keep the same
+                # bounded working canvas on the 1 GB Pi.
+                scale = min(3, 1200 / gray.width, 2400 / gray.height)
+                if scale > 1:
+                    gray = gray.resize((round(gray.width * scale), round(gray.height * scale)), Image.Resampling.LANCZOS)
                 # Light text on dark screenshots becomes dark text on white.
                 if gray.resize((1, 1)).getpixel((0, 0)) < 128:
                     gray = ImageOps.invert(gray)
@@ -186,4 +191,82 @@ def positioned_candidates(lines):
 
 
 def interpret(lines):
-    return positioned_candidates(lines)
+    text = '\n'.join(line['text'] for line in lines)
+    if ((re.search(r'\bspend\b|excluded from.*analysis', text, re.I) and re.search(r'categories|transactions', text, re.I))
+            or len(re.findall(r'\b\d+\s+Transactions?\b', text, re.I)) >= 2):
+        return spending_candidates(lines)
+    result = positioned_candidates(lines)
+    result['type'] = 'balances'
+    return result
+
+
+def spending_candidates(lines):
+    """Read aligned category/amount rows, never their lower comparison row.
+
+    Keep missing amounts empty for review. No inference of year, date coverage,
+    currency glyphs, or missing digits from the total is permitted.
+    """
+    # TSV may combine the left label and right amount into one text line.
+    separated = []
+    for line in lines:
+        parts = [[]]
+        for word in line['words']:
+            if parts[-1] and word['left'] - (parts[-1][-1]['left'] + parts[-1][-1]['width']) > line['height'] * 3:
+                parts.append([])
+            parts[-1].append(word)
+        for words in parts:
+            if words:
+                separated.append({**line, 'words': words, 'text': ' '.join(w['text'] for w in words),
+                                  'left': words[0]['left'], 'width': words[-1]['left'] + words[-1]['width'] - words[0]['left']})
+    lines = separated
+    text = '\n'.join(line['text'] for line in lines)
+    amount_pattern = re.compile(r'(?P<sign>[+−–-]?)\s*(?:£|GBP)\s*(?P<number>(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})(?![\d.])', re.I)
+    header = next((r for r in lines if re.search(r'\bspend\b', r['text'], re.I) and not re.search('excluded|analysis', r['text'], re.I)), None)
+    month_match = re.search(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+spend\b', text, re.I)
+    categories_top = next((r['top'] for r in lines if r['text'].strip().lower() == 'categories'), header['top'] if header else 0)
+    excluded_top = next((r['top'] for r in lines if re.search('excluded from', r['text'], re.I)), float('inf'))
+    stop = next((r['top'] for r in lines if re.search('customise your analysis|create your own report', r['text'], re.I)), float('inf'))
+    width = max((r['left'] + r['width'] for r in lines), default=1)
+
+    def aligned_amount(label):
+        peers = [r for r in lines if r['left'] > label['left'] + label['width'] and
+                 abs((r['top'] + r['height']/2) - (label['top'] + label['height']/2)) <= max(label['height'], r['height']) * .65]
+        matches = [(r, amount_pattern.search(r['text'])) for r in peers]
+        matches = [(r, m) for r, m in matches if m]
+        if len(matches) != 1:
+            return None
+        return matches[0][1]
+
+    def number(match, spending=False):
+        if match is None:
+            return ''
+        value = Decimal(match['number'].replace(',', ''))
+        if match['sign'] in ('-', '−', '–') or (spending and match['sign'] == '+'):
+            value = -value
+        return format(value, '.2f')
+
+    rows = []
+    for label in lines:
+        if not categories_top < label['top'] < stop or label['left'] > width * .55:
+            continue
+        name = label['text'].strip()
+        if not re.fullmatch(r'[A-Za-z][A-Za-z &/’\'-]{1,59}', name) or re.search(r'transactions?|categor|merchant|excluded|analysis|personalise', name, re.I):
+            continue
+        # A transaction count beneath a label identifies a category even when
+        # OCR cannot read its currency amount. This makes omissions reviewable.
+        below = [r for r in lines if 0 < r['top'] - label['top'] < label['height'] * 3.5 and abs(r['left'] - label['left']) < label['height'] * 2]
+        count = next((re.search(r'\b(\d+)\s+Transactions?\b', r['text'], re.I) for r in below if re.search(r'\b\d+\s+Transactions?\b', r['text'], re.I)), None)
+        match = aligned_amount(label)
+        if not match and not count:
+            continue
+        kind = 'expense' if label['top'] < excluded_top else 'income' if name.lower() == 'income' else 'transfer' if name.lower() == 'internal transfers' else 'excluded'
+        rows.append({'label': name, 'amount': number(match, kind == 'expense'), 'kind': kind,
+                     'count': int(count[1]) if count else None})
+    total = ''
+    if header:
+        nearby = [r for r in lines if 0 <= r['top'] - header['top'] <= header['height'] * 5 and abs(r['left'] - header['left']) < header['height'] * 3]
+        match = next((amount_pattern.search(r['text']) for r in nearby if amount_pattern.search(r['text'])), None)
+        total = number(match)
+    return {'type': 'spending', 'candidates': [], 'rows': rows[:60], 'total': total,
+            'month_hint': month_match[1] if month_match else '', 'text': text[:20000],
+            'notices': ['Check dates, account coverage and every amount. Negative spending means a net refund.']}

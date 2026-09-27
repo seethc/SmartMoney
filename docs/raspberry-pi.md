@@ -2,7 +2,8 @@
 
 Your Pi already runs SmartMoney, and you administer it through **Raspberry Pi
 Connect → Remote shell**. The new version replaces bank setup with Snoop screenshot
-imports. Updating files on Windows does not update the Pi automatically.
+imports, spending reports and a Bills page. Updating files on Windows does not
+update the Pi automatically.
 
 ## Upgrade your existing Pi through Connect
 
@@ -87,8 +88,32 @@ Refresh a page after saving on another device.
 6. Check every digit, minus sign and account mapping against the image. Enter the
    actual balance date. Remove duplicate cards from overlapping screenshots.
 7. Confirm and save. Existing balances change atomically; history does not change.
-8. On Accounts, set buffers and spending allowances. On Cash flow, enter planned
-   bills/income. Continue importing transaction CSVs for spending analysis.
+8. On Accounts, set buffers and spending allowances. Use **Bills** for recurring
+   expenses and **Cash flow** for future income and one-off payments.
+
+### Spending-category screenshots
+
+Use **one screenshot** showing the monthly spend total, all category rows, and
+the excluded income/transfers section. Upload it from Windows or Pixel through
+the same import page. The reader detects this layout automatically.
+
+Check each category and amount. Positive Snoop category refunds become negative
+spending; the smaller comparison amounts below each row are ignored. Enter the
+actual report start/end dates, including year, and which accounts are covered.
+The app requires the category sum to match the screenshot's spending total.
+Do not assume a partial month covers the whole month. Confirm, then save.
+
+Open **Spending → Snoop summary** to see the report. **CSV transactions** remains
+a separate source: totals are never combined or written as account balances.
+Only one summary is active per month; replacing it requires confirmation.
+
+### Recurring bills
+
+Open **Bills → Add bill**, select the paying account and enter the amount,
+frequency and next unpaid date. You can edit the amount/account or delete a bill
+from this page. Bills are included in cash-flow forecasts. They do not pay bills
+or create historical transactions. Record only payments still outstanding relative
+to your balance snapshot, and exclude these bills from daily spending allowances.
 
 Credit-card debt must be negative. A screenshot date does not prove a bank balance
 is current. The reader does not recognise bank logos or infer institutions from

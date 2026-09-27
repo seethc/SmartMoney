@@ -5,7 +5,7 @@ history, cash-flow forecasts and transfer suggestions. Nothing executes payments
 
 ## Snoop screenshot reader
 
-Choose **Snoop screenshots**, upload account-overview screenshots, then review
+Choose **Snoop screenshots**, upload account-overview or spending-category screenshots, then review
 each candidate GBP balance. Select an existing account or create a new one, enter
 the date Snoop actually refreshed the balance, and confirm before saving.
 
@@ -14,7 +14,8 @@ the date Snoop actually refreshed the balance, and confirm before saving.
 - One image decoded/OCR'd at a time, one OCR thread, at most 1200 × 2400 OCR pixels.
 - PNG/JPEG/WebP: maximum 8 MB / 16 megapixels each, up to six images per UI draft.
 - Handles GBP amounts, negative balances, horizontal cards with labels underneath,
-  and simple account lists. Apparent totals/spending summaries are excluded.
+  and simple account lists. Totals are excluded from balance imports.
+  Spending-category screenshots use a separate report review flow.
 - OCR suggestions start skipped. Account mapping, numbers and dates require review.
   Logos are not interpreted as bank identities. Unsupported/ambiguous layouts may
   require a crop or manual correction; this is not a guaranteed Snoop integration.
@@ -23,8 +24,16 @@ the date Snoop actually refreshed the balance, and confirm before saving.
 - Snapshot commits are atomic; older dates, conflicting updates and duplicate
   account selections are rejected. Existing account planning preferences survive.
 
-This reads **balances only**. Screenshots do not reconstruct transaction history.
-Spending reports still use CSV transactions; forecasts use saved balances, planned
+For a spending report, include the headline total, all categories and the excluded
+income/transfers section in **one image**. Review the extracted category amounts
+and counts, enter the actual start/end dates (including year) and account coverage.
+Net refunds reduce spending; comparison figures and transfers are excluded.
+The category sum must match the headline total before saving. One report is saved
+per month; replacing it requires explicit confirmation and a current revision.
+Use **Spending → Snoop summary / CSV transactions** to choose the source. These
+datasets are never added together. Summaries also appear separately on Overview.
+
+Screenshots do not reconstruct individual transactions. Forecasts use balances, planned
 payments, buffers and allowances. Snoop itself requires internet to refresh banks.
 Once dependencies are installed, SmartMoney's reader works without internet.
 Your browser still needs a connection to the Pi; Tailscale remote connectivity is
@@ -69,6 +78,16 @@ Forecasts process outgoing payments before incoming money on the same date and
 preserve monthly payment days where possible. Funding sources are opted-in current
 accounts with fresh snapshots and sufficient headroom after their own obligations.
 Recommendations are estimates; make transfers manually in your bank apps.
+
+## Bills
+
+Open **Bills → Add bill**. Enter a name, positive GBP amount, paying account,
+repeat interval and next unpaid date. Weekly, fortnightly, monthly, quarterly and
+yearly payments are supported. Edit or delete a bill from the same page.
+Bills feed the forecast without creating transactions or changing balances.
+Monthly/quarterly/yearly dates clamp to shorter months while retaining their
+original day for later occurrences. Enter future income and one-off payments in
+**Cash flow → Planned payment**. Avoid counting a bill again in daily allowances.
 
 ## Open Banking reference
 

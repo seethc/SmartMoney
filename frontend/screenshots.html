@@ -7,36 +7,46 @@
   <link rel="icon" href="/icon.svg"><script src="/screenshots.js" defer></script>
 </head>
 <body class="screenshot-page">
-<header class="topbar"><a class="brand" href="/">smartmoney.</a><a href="/#accounts">Back to accounts</a></header>
+<header class="topbar"><a class="brand" href="/"><img class="brand-mark" src="/icon.svg" alt="">SmartMoney</a><a href="/">Dashboard</a></header>
 <main>
-  <div class="eyebrow">YOUR MONEY, IN VIEW</div>
-  <h1>From Snoop to your snapshot.</h1>
-  <p class="subtitle">Read account balances from screenshots, check the results, and save them to SmartMoney.</p>
+  <h1>Import screenshots</h1>
   <section class="panel">
-    <div class="import-steps"><span>1 · Choose screenshots</span><span>2 · Check every balance</span><span>3 · Save snapshots</span></div>
-    <p>Open Snoop’s account overview and check its last refresh time. Capture the account names and GBP balances. Scroll and take more screenshots if needed. Avoid spending charts, totals and transaction lists.</p>
-    <p class="helper">Reading happens on your SmartMoney server, which discards images and text after processing. The review draft stays in this browser until you save or discard it. Only confirmed balances are saved. This does not connect to Snoop or move money.</p>
+    <p>Snoop account balances or spending categories. Read locally, then review.</p>
     <div class="form-grid">
-      <label class="field">Save into workspace<select id="workspace"><option value="personal">My real data</option><option value="demo">Demo workspace (practice)</option></select></label>
+      <label class="field">Workspace<select id="workspace"><option value="personal">My real data</option><option value="demo">Demo workspace (practice)</option></select></label>
       <label class="field">Screenshots (up to 6)<input id="images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label>
     </div>
     <div class="toolbar"><button class="primary" id="read" disabled>Read screenshots</button><button id="manual" disabled>Add a balance manually</button></div>
-    <p id="status" role="status" aria-live="polite">Checking local screenshot reader…</p>
-    <p class="helper">PNG, JPEG or WebP · 8 MB per image · 16 megapixels maximum. You can also select files from your Windows laptop.</p>
+    <p id="status" role="status" aria-live="polite">Checking reader…</p>
+    <p class="helper">PNG / JPEG / WebP · up to 8 MB each. One image per spending report.</p>
   </section>
   <section id="review" class="panel" hidden>
-    <h2>Review before saving</h2>
-    <p>Each detected amount starts as <strong>Skip this row</strong>. Choose its account, or create a new one. Check the amount against the original and enter the date Snoop last updated that account—not just today’s screenshot date. Credit-card debt must be negative.</p>
-    <p class="note">Balances update your account overview and forecast starting points. They do not create transactions or a spending breakdown. Continue using CSV history for spending and cash-flow analysis.</p>
+    <h2>Review</h2>
+    <p id="balance-help" class="helper">Match balances to accounts and enter their last updated dates. Credit-card debt is negative.</p>
     <div id="sources"></div>
     <form id="review-form">
+      <fieldset id="spending-fields" hidden>
+        <p id="period-hint" class="helper"></p>
+        <div class="form-grid">
+          <label class="field">From<input id="report-start" type="date"></label>
+          <label class="field">Through<input id="report-end" type="date"></label>
+          <label class="field">Accounts included<input id="report-scope" maxlength="200" placeholder="e.g. All Snoop accounts"></label>
+          <label class="field">Screenshot spend total (£)<input id="report-total" type="number" step="0.01"></label>
+        </div>
+        <p class="helper">Spending is positive; net refunds are negative. Comparison figures are excluded.</p>
+        <div id="category-rows"></div>
+        <button id="add-category" type="button">Add category</button>
+        <p id="reconciliation" role="status"></p>
+        <p id="existing-report" class="helper"></p>
+        <label id="replace-label" class="check-field" hidden><input type="checkbox" id="replace-report">Replace the saved report for this month</label>
+      </fieldset>
       <div id="rows"></div>
-      <label class="check-field"><input type="checkbox" id="confirmed" required> I checked the selected accounts, GBP balances and their actual balance dates.</label>
+      <label class="check-field"><input type="checkbox" id="confirmed" required> I checked the amounts, dates and accounts.</label>
       <p id="save-error" role="alert"></p>
-      <div class="form-actions"><button type="button" id="discard">Discard draft</button><button class="primary" id="save" type="submit">Save reviewed balances</button></div>
+      <div class="form-actions"><button type="button" id="discard">Discard draft</button><button class="primary" id="save" type="submit">Save</button></div>
     </form>
   </section>
   <section id="success" class="panel" hidden aria-live="polite"></section>
-  <p class="helper"><a href="/privacy.html">Privacy information</a> · Independent personal tool, not affiliated with Snoop. Screenshot layouts and OCR accuracy vary.</p>
+  <p class="helper"><a href="/privacy.html">Privacy information</a> · Images are discarded after reading.</p>
 </main>
 </body></html>

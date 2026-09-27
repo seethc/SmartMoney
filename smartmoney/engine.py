@@ -3,21 +3,27 @@ from calendar import monthrange
 from datetime import date, timedelta
 
 
-def next_month(day, anchor):
-    year, month = day.year + (day.month == 12), day.month % 12 + 1
+def next_month(day, anchor, interval=1):
+    index = day.year * 12 + day.month - 1 + interval
+    year, month = index // 12, index % 12 + 1
     return date(year, month, min(anchor, monthrange(year, month)[1]))
 
 
 def occurrences(schedule, today, end):
     due = date.fromisoformat(schedule['next_due'])
     anchor = schedule.get('month_day') or due.day
-    while due < today and schedule['frequency'] == 'monthly':
-        due = next_month(due, anchor)
+    frequency = schedule['frequency']
+    def advance(day):
+        if frequency in ('weekly', 'fortnightly'):
+            return day + timedelta(days=7 if frequency == 'weekly' else 14)
+        return next_month(day, anchor, {'monthly': 1, 'quarterly': 3, 'yearly': 12}[frequency])
+    while due < today and frequency != 'once':
+        due = advance(due)
     while today <= due <= end:
         yield due
-        if schedule['frequency'] != 'monthly':
+        if frequency == 'once':
             break
-        due = next_month(due, anchor)
+        due = advance(due)
 
 
 def forecast(accounts, schedules, today, days):
